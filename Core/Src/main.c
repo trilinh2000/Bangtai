@@ -30,6 +30,10 @@ typedef enum {
 	PROGRAM_STOPPED=0,
 	PROGRAM_RUNNING
 }ProgramState;
+typedef enum {
+	Motor_run,
+	Motor_stop,
+}Motor;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -58,15 +62,19 @@ static void MX_GPIO_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 int req=0;
-void Motor_Run(void)
+void Motor_driver(Motor status)
 {
-	HAL_GPIO_WritePin(Y00_GPIO_Port, Y00_Pin, GPIO_PIN_SET);//bat bang tai
-	HAL_GPIO_WritePin(Y01_GPIO_Port, Y01_Pin, GPIO_PIN_SET);
-}
-void Motor_Stop(void)
-{
-	HAL_GPIO_WritePin(Y00_GPIO_Port, Y00_Pin, GPIO_PIN_RESET);//dung bang tai
-	HAL_GPIO_WritePin(Y01_GPIO_Port, Y01_Pin, GPIO_PIN_RESET);
+	if(status==Motor_run)
+	{
+		HAL_GPIO_WritePin(Y00_GPIO_Port, Y00_Pin, GPIO_PIN_SET);//bat bang tai
+		HAL_GPIO_WritePin(Y01_GPIO_Port, Y01_Pin, GPIO_PIN_SET);
+	}
+	else
+	{
+		HAL_GPIO_WritePin(Y00_GPIO_Port, Y00_Pin, GPIO_PIN_RESET);//dung bang tai
+		HAL_GPIO_WritePin(Y01_GPIO_Port, Y01_Pin, GPIO_PIN_RESET);
+	}
+
 }
 void Program_Run(void)
 {
@@ -74,10 +82,10 @@ void Program_Run(void)
 		{
 			if(HAL_GPIO_ReadPin(X03_GPIO_Port,X03_Pin)==1)//k co hang o cam bien 1
 			{
-				Motor_Run();
+				Motor_driver(Motor_run);
 			}
 			else{
-				Motor_Stop();
+				Motor_driver(Motor_stop);
 			}
 
 		}
@@ -86,8 +94,7 @@ void Program_Run(void)
 	{
 		if(HAL_GPIO_ReadPin(X03_GPIO_Port,X03_Pin)==0&&req==0)//co hang o cam bien 1
 		{
-			Motor_Stop();
-//			HAL_GPIO_WritePin(Y05_GPIO_Port, Y05_Pin, GPIO_PIN_SET);//confrim AGV cho
+			Motor_driver(Motor_stop);
 		}
 		else
 		{
@@ -97,10 +104,10 @@ void Program_Run(void)
 			{
 				req=1;
 				HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_SET);//confrim AGV tra hang
-				Motor_Run();
+				Motor_driver(Motor_run);
 				if(HAL_GPIO_ReadPin(X03_GPIO_Port,X03_Pin)==0&&HAL_GPIO_ReadPin(X04_GPIO_Port,X04_Pin)==1)//co tin hieu cam bien 2 va k co tin hieu cb1
 				{
-					Motor_Stop();
+					Motor_driver(Motor_stop);
 					req=0;
 					HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_RESET);
 					HAL_GPIO_WritePin(Y06_GPIO_Port, Y06_Pin, GPIO_PIN_SET);//confirm thanh cong
@@ -110,9 +117,7 @@ void Program_Run(void)
 			}
 			else if(HAL_GPIO_ReadPin(X07_GPIO_Port,X07_Pin)==0)//agv confirm stop
 			{
-				Motor_Stop();
-//				HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_RESET);
-//				HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_SET);//confirm error
+				Motor_driver(Motor_stop);
 			}
 		}
 	}
@@ -121,11 +126,12 @@ void Program_Stop(void)
 {
 	while(HAL_GPIO_ReadPin(X00_GPIO_Port,X00_Pin)==0||HAL_GPIO_ReadPin(X01_GPIO_Port,X01_Pin)==1)//nhan emg va start chua bam
 	{
+		HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_SET);//bang tai con firm cho agv stop
 		HAL_GPIO_WritePin(Y05_GPIO_Port, Y05_Pin, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(Y06_GPIO_Port, Y06_Pin, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(Y07_GPIO_Port, Y07_Pin, GPIO_PIN_RESET);
-		Motor_Stop();
+
+		Motor_driver(Motor_stop);
 	}
 	HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_SET);//reset stop con firm
 
@@ -158,11 +164,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 				programState = PROGRAM_STOPPED;
 				while(HAL_GPIO_ReadPin(X01_GPIO_Port,X01_Pin)==1)//start chua bam
 				{
+					HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_RESET);
 					HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_SET);//bang tai confirm cho agv stop
 					HAL_GPIO_WritePin(Y05_GPIO_Port, Y05_Pin, GPIO_PIN_RESET);
 					HAL_GPIO_WritePin(Y06_GPIO_Port, Y06_Pin, GPIO_PIN_RESET);
-					HAL_GPIO_WritePin(Y07_GPIO_Port, Y07_Pin, GPIO_PIN_RESET);
-					Motor_Stop();
+
+					Motor_driver(Motor_stop);
 
 				}
 				HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_RESET);
@@ -217,7 +224,7 @@ int main(void)
 	  }
 	  else
 	  {
-		  Motor_Stop();
+		  Motor_driver(Motor_stop);
 	  }
 
   }
