@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -27,13 +28,15 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef enum {
-	PROGRAM_STOPPED=0,
-	PROGRAM_RUNNING
+	PROGRAM_STOPPED,
+	PROGRAM_RUNNING,
 }ProgramState;
 typedef enum {
-	Motor_run,
+	Motor_load,
+	Motor_unload,
 	Motor_stop,
 }Motor;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -47,136 +50,126 @@ typedef enum {
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-
+/* Definitions for buttonTask */
+osThreadId_t buttonTaskHandle;
+const osThreadAttr_t buttonTask_attributes = {
+  .name = "buttonTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for myTask02 */
+osThreadId_t myTask02Handle;
+const osThreadAttr_t myTask02_attributes = {
+  .name = "myTask02",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityAboveNormal,
+};
 /* USER CODE BEGIN PV */
-ProgramState programState=PROGRAM_STOPPED;
+ProgramState programState=PROGRAM_RUNNING;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+void StartDefaultTask(void *argument);
+void StartTask02(void *argument);
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int req=0;
+uint16_t req=0;
+uint16_t tag=0;
+
 void Motor_driver(Motor status)
 {
-	if(status==Motor_run)
+	switch(status)
 	{
-		HAL_GPIO_WritePin(Y00_GPIO_Port, Y00_Pin, GPIO_PIN_SET);//bat bang tai
-		HAL_GPIO_WritePin(Y01_GPIO_Port, Y01_Pin, GPIO_PIN_SET);
+		case Motor_load:
+			HAL_GPIO_WritePin(Y00_GPIO_Port, Y00_Pin, GPIO_PIN_SET);//Motor Load
+			HAL_GPIO_WritePin(Y01_GPIO_Port, Y01_Pin, GPIO_PIN_RESET);
+			break;
+		case Motor_unload:
+			HAL_GPIO_WritePin(Y00_GPIO_Port, Y00_Pin, GPIO_PIN_SET);//Motor UnLoad
+			HAL_GPIO_WritePin(Y01_GPIO_Port, Y01_Pin, GPIO_PIN_SET);
+			break;
+		default:
+			HAL_GPIO_WritePin(Y00_GPIO_Port, Y00_Pin, GPIO_PIN_RESET);//Motor Stop
+			HAL_GPIO_WritePin(Y01_GPIO_Port, Y01_Pin, GPIO_PIN_RESET);
+			break;
 	}
-	else
+
+
+}
+void Program_Run_Load(void)
+{
+	if(HAL_GPIO_ReadPin(X04_GPIO_Port, X04_Pin)==1)//cb1
 	{
-		HAL_GPIO_WritePin(Y00_GPIO_Port, Y00_Pin, GPIO_PIN_RESET);//dung bang tai
-		HAL_GPIO_WritePin(Y01_GPIO_Port, Y01_Pin, GPIO_PIN_RESET);
+		tag=1;
+	}
+	if(tag==1)
+	{
+		if(HAL_GPIO_ReadPin(X07_GPIO_Port, X07_Pin)==0)//red sensor3
+		{
+			HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_SET);//write sensor 3
+			Motor_driver(Motor_load);
+			if(HAL_GPIO_ReadPin(X04_GPIO_Port, X04_Pin)==0)//cb1=0
+			{
+				Motor_driver(Motor_stop);
+				HAL_GPIO_WritePin(Y02_GPIO_Port, Y02_Pin, GPIO_PIN_SET);//wirte sensor 1
+				req=0;
+				tag=0;
+				HAL_Delay(500);
+				HAL_GPIO_WritePin(Y02_GPIO_Port, Y02_Pin, GPIO_PIN_RESET);
+				HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_RESET);
+			}
+
+		}
+		else {
+			Motor_driver(Motor_stop);
+		}
 	}
 
 }
-void Program_Run(void)
+void Program_Run_UnLoad(void)
 {
-	if(HAL_GPIO_ReadPin(X04_GPIO_Port,X04_Pin)==0&&req==0)
+	if(HAL_GPIO_ReadPin(X04_GPIO_Port, X04_Pin)==0)//co hang cb 2
 		{
-			if(HAL_GPIO_ReadPin(X03_GPIO_Port,X03_Pin)==1)//k co hang o cam bien 1
-			{
-				Motor_driver(Motor_run);
-			}
-			else{
-				Motor_driver(Motor_stop);
-			}
-
+			tag=1;
 		}
-
-	else
-	{
-		if(HAL_GPIO_ReadPin(X03_GPIO_Port,X03_Pin)==0&&req==0)//co hang o cam bien 1
+		if(tag==1)
 		{
-			Motor_driver(Motor_stop);
-		}
-		else
-		{
-			HAL_GPIO_WritePin(Y05_GPIO_Port, Y05_Pin, GPIO_PIN_RESET);
-			HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_RESET);
-			if(HAL_GPIO_ReadPin(X05_GPIO_Port,X05_Pin)==0)//AGV confirm start tra hang
+			if(HAL_GPIO_ReadPin(X07_GPIO_Port, X07_Pin)==0)
 			{
-				req=1;
-				HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_SET);//confrim AGV tra hang
-				Motor_driver(Motor_run);
-				if(HAL_GPIO_ReadPin(X03_GPIO_Port,X03_Pin)==0&&HAL_GPIO_ReadPin(X04_GPIO_Port,X04_Pin)==1)//co tin hieu cam bien 2 va k co tin hieu cb1
+				HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_SET);
+				Motor_driver(Motor_unload);
+				if(HAL_GPIO_ReadPin(X05_GPIO_Port, X05_Pin)==0)
 				{
 					Motor_driver(Motor_stop);
+					HAL_GPIO_WritePin(Y02_GPIO_Port, Y02_Pin, GPIO_PIN_SET);
 					req=0;
-					HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_RESET);
-					HAL_GPIO_WritePin(Y06_GPIO_Port, Y06_Pin, GPIO_PIN_SET);//confirm thanh cong
-					HAL_Delay(5000);
-					HAL_GPIO_WritePin(Y06_GPIO_Port, Y06_Pin, GPIO_PIN_RESET);
+					tag=0;
+					HAL_Delay(500);
+					HAL_GPIO_WritePin(Y02_GPIO_Port, Y02_Pin, GPIO_PIN_RESET);
+					HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_RESET);
 				}
 			}
-			else if(HAL_GPIO_ReadPin(X07_GPIO_Port,X07_Pin)==0)//agv confirm stop
+			else
 			{
 				Motor_driver(Motor_stop);
 			}
+
 		}
-	}
+
 }
 void Program_Stop(void)
 {
-	while(HAL_GPIO_ReadPin(X00_GPIO_Port,X00_Pin)==0||HAL_GPIO_ReadPin(X01_GPIO_Port,X01_Pin)==1)//nhan emg va start chua bam
-	{
-		HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_SET);//bang tai con firm cho agv stop
-		HAL_GPIO_WritePin(Y05_GPIO_Port, Y05_Pin, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(Y06_GPIO_Port, Y06_Pin, GPIO_PIN_RESET);
-
 		Motor_driver(Motor_stop);
-	}
-	HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_SET);//reset stop con firm
-
-
 }
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-	if (GPIO_Pin == GPIO_PIN_0)
-	{ // Nút EMG
-		if (programState == PROGRAM_RUNNING)
-		{
-				programState = PROGRAM_STOPPED;
-				// G�?i hàm dừng chương trình
-				Program_Stop();
-		}
-	}
-	else if (GPIO_Pin == GPIO_PIN_1)
-	{ // Nút Start
-	        if (programState == PROGRAM_STOPPED) {
-	            programState = PROGRAM_RUNNING;
-	            // G�?i hàm chạy chương trình
-//	            Program_Run();
-	        }
-	}
 
-	else if (GPIO_Pin == GPIO_PIN_6)
-	{ // Nút Reset
-//	        NVIC_SystemReset(); // Thiết lập lại vi đi�?u khiển STM32
-		if (programState == PROGRAM_RUNNING)
-		{
-				programState = PROGRAM_STOPPED;
-				while(HAL_GPIO_ReadPin(X01_GPIO_Port,X01_Pin)==1)//start chua bam
-				{
-					HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_RESET);
-					HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_SET);//bang tai confirm cho agv stop
-					HAL_GPIO_WritePin(Y05_GPIO_Port, Y05_Pin, GPIO_PIN_RESET);
-					HAL_GPIO_WritePin(Y06_GPIO_Port, Y06_Pin, GPIO_PIN_RESET);
-
-					Motor_driver(Motor_stop);
-
-				}
-				HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_RESET);
-		}
-
-	}
-}
 /* USER CODE END 0 */
 
 /**
@@ -209,8 +202,48 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_GPIO_WritePin(Y02_GPIO_Port, Y02_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(Y03_GPIO_Port, Y03_Pin, GPIO_PIN_RESET);
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of buttonTask */
+  buttonTaskHandle = osThreadNew(StartDefaultTask, NULL, &buttonTask_attributes);
+
+  /* creation of myTask02 */
+  myTask02Handle = osThreadNew(StartTask02, NULL, &myTask02_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -219,14 +252,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if(programState==PROGRAM_RUNNING){
-		  Program_Run();
-	  }
-	  else
-	  {
-		  Motor_driver(Motor_stop);
-	  }
-
   }
   /* USER CODE END 3 */
 }
@@ -288,7 +313,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, Y02_Pin|Y03_Pin|X10_Pin|Y06_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, Y02_Pin|Y03_Pin|Y06_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, Y05_Pin|Y00_Pin|Y01_Pin, GPIO_PIN_RESET);
@@ -296,28 +321,28 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(Y04_GPIO_Port, Y04_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : X00_Pin X01_Pin */
-  GPIO_InitStruct.Pin = X00_Pin|X01_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  /*Configure GPIO pins : X00_Pin X01_Pin X05_Pin */
+  GPIO_InitStruct.Pin = X00_Pin|X01_Pin|X05_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Y02_Pin Y03_Pin X10_Pin Y06_Pin */
-  GPIO_InitStruct.Pin = Y02_Pin|Y03_Pin|X10_Pin|Y06_Pin;
+  /*Configure GPIO pins : Y02_Pin Y03_Pin Y06_Pin */
+  GPIO_InitStruct.Pin = Y02_Pin|Y03_Pin|Y06_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : X06_Pin X07_Pin */
-  GPIO_InitStruct.Pin = X06_Pin|X07_Pin;
+  /*Configure GPIO pins : X10_Pin X06_Pin X07_Pin */
+  GPIO_InitStruct.Pin = X10_Pin|X06_Pin|X07_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : X02_Pin */
   GPIO_InitStruct.Pin = X02_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(X02_GPIO_Port, &GPIO_InitStruct);
 
@@ -347,22 +372,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(X04_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : X05_Pin */
-  GPIO_InitStruct.Pin = X05_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(X05_GPIO_Port, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI0_IRQn, 1, 0);
-  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
-
-  HAL_NVIC_SetPriority(EXTI1_IRQn, 1, 0);
-  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
-
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 1, 0);
-  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
 }
@@ -370,6 +379,90 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the buttonTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  for(;;)
+  {
+	 if(HAL_GPIO_ReadPin(X00_GPIO_Port, X00_Pin)==0)
+	 {
+		 programState=PROGRAM_STOPPED;
+		 Program_Stop();
+	 }
+	 if(HAL_GPIO_ReadPin(X00_GPIO_Port, X00_Pin)==1&&HAL_GPIO_ReadPin(X01_GPIO_Port, X01_Pin)==0)
+	 {
+		 programState=PROGRAM_RUNNING;
+	 }
+	 if(HAL_GPIO_ReadPin(X02_GPIO_Port, X02_Pin)==0)
+	 {
+		 programState=PROGRAM_STOPPED;
+		 Program_Stop();
+	 }
+    osDelay(1);
+  }
+  /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartTask02 */
+/**
+* @brief Function implementing the myTask02 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask02 */
+void StartTask02(void *argument)
+{
+  /* USER CODE BEGIN StartTask02 */
+  /* Infinite loop */
+  for(;;)
+  {
+	  if(programState==PROGRAM_RUNNING){
+		  if(HAL_GPIO_ReadPin(X06_GPIO_Port, X06_Pin)==1)
+			  {
+				  Program_Run_Load();
+			  }
+			  else if(HAL_GPIO_ReadPin(X06_GPIO_Port, X06_Pin)==0){
+				  Program_Run_UnLoad();
+			  }
+	  }
+	  else{
+
+	  }
+
+    osDelay(1);
+  }
+  /* USER CODE END StartTask02 */
+}
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM4 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM4) {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
